@@ -32,6 +32,8 @@ class static_press {
 		$this->url_table = self::url_table();
 		$this->init_params($static_url, $static_dir, $remote_get_option);
 
+		add_action('publish_post', array($this, 'fetch'));
+
 		add_action('wp_ajax_static_press_init', array($this, 'ajax_init'));
 		add_action('wp_ajax_static_press_fetch', array($this, 'ajax_fetch'));
 		add_action('wp_ajax_static_press_finalyze', array($this, 'ajax_finalyze'));
@@ -136,6 +138,80 @@ CREATE TABLE `{$this->url_table}` (
 		header('Content-Type: application/json; charset='.get_option('blog_charset'));
 		echo json_encode($content);
 		die();
+	}
+
+	public function fetch(){
+		# TODO publish_post時にbuildするか判定値を作成、form入力させる
+		# TODO 共通処理の簡略化
+		global $wpdb;
+
+		$urls = $this->insert_all_url();
+		$sql = $wpdb->prepare(
+			"select type, count(*) as count from {$this->url_table} where `last_upload` < %s and enable = 1 group by type",
+			$this->fetch_start_time()
+		);
+		$all_urls = $wpdb->get_results($sql);
+
+		$url = $this->fetch_url();
+		if (!$url) {
+			return;
+		}
+		$result = array();
+		$static_file = $this->create_static_file($url->url, $url->type, true, true);
+		$file_count = 1;
+		$result[$url->ID] = array(
+			'ID' => $url->ID,
+			'page' => 1,
+			'type' => $url->type,
+			'url' => $url->url,
+			'static' => $static_file,
+			);
+		if ($url->pages > 1) {
+			for ($page = 2; $page <= $url->pages; $page++) {
+				$page_url = untrailingslashit(trim($url->url));
+				$static_file = false;
+				switch($url->type){
+				case 'term_archive':
+				case 'author_archive':
+				case 'other_page':
+					$page_url = sprintf('%s/page/%d', $page_url, $page);
+					$static_file = $this->create_static_file($page_url, 'other_page', false, true);
+					break;
+				case 'single':
+					$page_url = sprintf('%s/%d', $page_url, $page);
+					$static_file = $this->create_static_file($page_url, 'other_page', false, true);
+					break;
+				}
+				if (!$static_file)
+					break;
+				$file_count++;
+				$result["{$url->ID}-{$page}"] = array(
+					'ID' => $url->ID,
+					'page' => $page,
+					'type' => $url->type,
+					'url' => $page_url,
+					'static' => $static_file,
+				);
+			}
+		}
+
+		while ($url = $this->fetch_url()) {
+			$limit = ($url->type == 'static_file' ? self::FETCH_LIMIT_STATIC : self::FETCH_LIMIT);
+			$static_file = $this->create_static_file($url->url, $url->type, true, true);
+			$file_count++;
+			$result[$url->ID] = array(
+				'ID' => $url->ID,
+				'page' => 1,
+				'type' => $url->type,
+				'url' => $url->url,
+				'static' => $static_file,
+			);
+			if ($file_count >= $limit)
+				break;
+		}
+
+		$static_file = $this->create_static_file($this->get_site_url().'404.html');
+		$this->fetch_finalyze();
 	}
 
 	public function ajax_init(){
