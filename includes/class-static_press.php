@@ -196,9 +196,7 @@ CREATE TABLE `{$this->url_table}` (
 		}
 
 		while ($url = $this->fetch_url()) {
-			$limit = ($url->type == 'static_file' ? self::FETCH_LIMIT_STATIC : self::FETCH_LIMIT);
 			$static_file = $this->create_static_file($url->url, $url->type, true, true);
-			$file_count++;
 			$result[$url->ID] = array(
 				'ID' => $url->ID,
 				'page' => 1,
@@ -206,8 +204,6 @@ CREATE TABLE `{$this->url_table}` (
 				'url' => $url->url,
 				'static' => $static_file,
 			);
-			if ($file_count >= $limit)
-				break;
 		}
 
 		$static_file = $this->create_static_file($this->get_site_url().'404.html');
